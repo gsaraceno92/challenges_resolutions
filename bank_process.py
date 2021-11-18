@@ -5,14 +5,13 @@ import os
 import pathlib
 import sys
 from datetime import datetime
-from io import TextIOWrapper
-
-import mysql.connector
-from mysql.connector import errorcode
-from mysql.connector.connection import MySQLConnection
+from sqlalchemy.engine.base import Engine
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+from sqlalchemy import select
 from tqdm import tqdm
-
-from models import MysqlException
+import sqlalchemy as sql
+from models import MysqlException, Report, User
 
 file_path = os.path.dirname(__file__)
 logging.basicConfig(
@@ -23,34 +22,28 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-def get_mysql_client(user: str, pwd: str, host: str, port: int, db: str) -> MySQLConnection:
+def get_engine(user: str, pwd: str, host: str, port: int, db: str) -> Engine:
   try:
-    conn: MySQLConnection = mysql.connector.connect(user=user, password=pwd,
-                                  host=host,
-                                  port=port,
-                                  database=db)
-  except mysql.connector.Error as err:
-    message = err
-    if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
-      message = "Something is wrong with your user name or password"
-      logging.error(message)
-    elif err.errno == errorcode.ER_BAD_DB_ERROR:
-      message = "Database does not exist"
-      logging.error(message)
-    else:
-      logging.error(err)
-    raise MysqlException(message)
-  return conn
+    engine: Engine = sql.create_engine(f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}", echo=False)
+  except SQLAlchemyError as err:
+    logging.error(err)
+    raise MysqlException(err)
+  
+  return engine
+
 
 def process_users_operations(data, report_path: str) -> None:
-
   report_path = os.path.join(file_path, './reports', today)
-  pathlib.Path(report_path).mkdir(parents=True, exist_ok=True) 
-  for row in tqdm(data):
-    user_file: TextIOWrapper = open(file=f'{report_path}/{row[0]}.txt', mode="w")
-    user_file.write(row[1])
-    user_file.write("\n")
-    # operation = f"i"
+  pathlib.Path(report_path).mkdir(parents=True, exist_ok=True)
+  for row in tqdm(data.scalars().all()):
+    print(row.id, ' - ', row.name)
+    # * Create report only if all operations succeeded
+    report = Report(f'{report_path}/{row.id}.txt')
+    for operation in row.operations.scalars().all():
+      print('operation')
+    # report.write(row[1])
+    # report.write("\n")
+    report.close()
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Args to be processed')
@@ -94,19 +87,20 @@ if __name__ == '__main__':
   logging.debug('Get script args')
 
   try:
-    conn = get_mysql_client(user=args.user, pwd=args.password, host=args.host, port=args.port, db=args.database)
+    engine = get_engine(user=args.user, pwd=args.password, host=args.host, port=args.port, db=args.database)
     logging.info('Got mysql client')
   except MysqlException as e:
     sys.exit(e)
 
   print('Start process')
   logging.info('Start process')
-  cursor = conn.cursor()
-  cursor.execute("Select * from utenti")
-  result = cursor.fetchall()
+  session = Session(engine)
+
+  select_users = select(User)
+  users = session.execute(select_users)
   today = datetime.today()
   today = today.strftime('%d-%m-%Y')
   report_path = os.path.join(file_path, './reports', today)
   pathlib.Path(report_path).mkdir(parents=True, exist_ok=True)
-  process_users_operations(data=result, report_path=report_path)
+  process_users_operations(data=users, report_path=report_path)
 
