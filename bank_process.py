@@ -4,14 +4,16 @@ import logging
 import os
 import pathlib
 import sys
-from datetime import datetime
+from datetime import date, datetime
+
+
+import sqlalchemy as sql
+from sqlalchemy.engine import ResultProxy
+from sqlalchemy import select
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from sqlalchemy import select
 from tqdm import tqdm
-import sqlalchemy as sql
-from models import MysqlException, Report, User
 
 file_path = os.path.dirname(__file__)
 logging.basicConfig(
@@ -19,6 +21,8 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S')
+
+from models import MysqlException, Report, User
 
 logger = logging.getLogger(__name__)
 
@@ -32,18 +36,28 @@ def get_engine(user: str, pwd: str, host: str, port: int, db: str) -> Engine:
   return engine
 
 
-def process_users_operations(data, report_path: str) -> None:
+def process_users_operations(data: ResultProxy, report_path: str) -> None:
   report_path = os.path.join(file_path, './reports', today)
   pathlib.Path(report_path).mkdir(parents=True, exist_ok=True)
-  for row in tqdm(data.scalars().all()):
-    print(row.id, ' - ', row.name)
+  users = data.scalars().all()
+  logger.info(f'Total users: N.{len(users)}')
+  for row in tqdm(users, desc="Users progress: "):
+    logger.info(f'Process user: {row.id} - {row.name}')
     # * Create report only if all operations succeeded
     report = Report(f'{report_path}/{row.id}.txt')
-    for operation in row.operations.scalars().all():
-      print('operation')
-    # report.write(row[1])
-    # report.write("\n")
-    report.close()
+    report.write(row.name)
+    report.write("\n")
+    logger.info(f'Total operations for {row.name}: N.{len(row.operations)}')
+    # TODO: sort operations for asc date
+    for operation in tqdm(row.operations, desc="Operations progress: "):
+      report.write("\n")
+      day: date = operation.day
+      formatted_day = day.strftime('%d/%m/%Y')
+      report_amount = str(round(operation.amount, 2)).replace('.', ',')
+      report_operation = f"{formatted_day} ** {report_amount}€"
+      report.write(report_operation)
+
+    report.save()
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Args to be processed')
@@ -97,7 +111,7 @@ if __name__ == '__main__':
   session = Session(engine)
 
   select_users = select(User)
-  users = session.execute(select_users)
+  users: ResultProxy = session.execute(select_users)
   today = datetime.today()
   today = today.strftime('%d-%m-%Y')
   report_path = os.path.join(file_path, './reports', today)

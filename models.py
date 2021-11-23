@@ -1,11 +1,13 @@
 
 import io
 from typing import Any
+import logging
+
+from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql.schema import Column, ForeignKey
 from sqlalchemy.sql.sqltypes import DECIMAL, DateTime, Integer, String
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import relationship
 
+logger = logging.getLogger(__name__)
 # declarative base class
 Base = declarative_base()
 class MysqlException(Exception):
@@ -21,19 +23,24 @@ class Report:
     self.__output__ = self.__initialize()
 
   def __initialize(self) -> io.StringIO:
-    return io.StringIO
+    return io.StringIO()
 
   def write(self, content: Any) -> None:
     self.__output__.write(content)
 
   def get_content(self) -> str:
-    print(self.__output__.tell())
-    return self.__output__.getvalue()
+    try:
+        value = self.__output__.getvalue()
+    except TypeError as e:
+        logger.exception(e)
+        return ""
+    else:
+        return value
 
   def __close_buffer(self):
     self.__output__.close()
 
-  def close(self) -> None:
+  def save(self) -> None:
     report: io.TextIOWrapper = open(file=self.file_path, mode=self.mode)
     content = self.get_content()
     report.write(content)
