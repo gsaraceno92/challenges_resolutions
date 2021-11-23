@@ -41,6 +41,7 @@ def process_users_operations(data: ResultProxy, report_path: str) -> None:
   pathlib.Path(report_path).mkdir(parents=True, exist_ok=True)
   users = data.scalars().all()
   logger.info(f'Total users: N.{len(users)}')
+  # TODO: use tdqm_notebook for a better user experience
   for row in tqdm(users, desc="Users progress: "):
     logger.info(f'Process user: {row.id} - {row.name}')
     # * Create report only if all operations succeeded
