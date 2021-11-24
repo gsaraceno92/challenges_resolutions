@@ -1,9 +1,10 @@
 
 import io
-from typing import Any
+from typing import Any, List
 import logging
 
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.sql.functions import func
 from sqlalchemy.sql.schema import Column, ForeignKey
 from sqlalchemy.sql.sqltypes import DECIMAL, DateTime, Integer, String
 
@@ -49,13 +50,13 @@ class Report:
 
 
 class User(Base):
-  __tablename__ = "utenti"
+    __tablename__ = "utenti"
 
-  id = Column('id', Integer, primary_key=True)
-  name = Column('nome', String(255), nullable=True)
-  first_amount = Column('primo_deposito', DECIMAL(2, 13), nullable=True)
-  balance = Column('saldo', DECIMAL(2, 13), nullable=True)
-  operations = relationship("Operation", back_populates="user")
+    id = Column('id', Integer, primary_key=True)
+    name = Column('nome', String(255), nullable=True)
+    first_amount = Column('primo_deposito', DECIMAL(2, 13), nullable=True)
+    balance = Column('saldo', DECIMAL(2, 13), nullable=True)
+    operations = relationship("Operation", back_populates="user", order_by="Operation.day", lazy="dynamic")
 
 
 class Operation(Base):
@@ -66,3 +67,18 @@ class Operation(Base):
     day = Column('giorno', DateTime, nullable=True)
     amount = Column('ammontare', DECIMAL(2, 13), nullable=True)
     user = relationship("User", back_populates="operations")
+
+    # @classmethod
+    # def filter(cls, id: int) -> List:
+    #     try:
+    #         operations = session.query(cls.day, cls.user_id, func.sum(cls.amount).label("day_amount")) \
+    #                 .filter_by(user_id=id) \
+    #                 .group_by(cls.day, cls.user_id) \
+    #                 .order_by(cls.day).all()
+    #     except Exception as e:
+    #         print("Error retrieving operations for user ", id)
+    #         logger.error(e)
+    #         return []
+    #     else:
+    #         return operations
+            

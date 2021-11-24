@@ -5,7 +5,7 @@ import os
 import pathlib
 import sys
 from datetime import date, datetime
-
+# from time import sleep
 
 import sqlalchemy as sql
 from sqlalchemy.engine import ResultProxy
@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.functions import func
 from tqdm import tqdm
 
 file_path = os.path.dirname(__file__)
@@ -22,7 +23,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S')
 
-from models import MysqlException, Report, User
+from models import MysqlException, Operation, Report, User
 
 logger = logging.getLogger(__name__)
 
@@ -41,22 +42,26 @@ def process_users_operations(data: ResultProxy, report_path: str) -> None:
   pathlib.Path(report_path).mkdir(parents=True, exist_ok=True)
   users = data.scalars().all()
   logger.info(f'Total users: N.{len(users)}')
-  # TODO: use tdqm_notebook for a better user experience
-  for row in tqdm(users, desc="Users progress: "):
+  for row in tqdm(users, desc="Users: ", disable=False):
     logger.info(f'Process user: {row.id} - {row.name}')
     # * Create report only if all operations succeeded
     report = Report(f'{report_path}/{row.id}.txt')
     report.write(row.name)
     report.write("\n")
-    logger.info(f'Total operations for {row.name}: N.{len(row.operations)}')
-    # TODO: sort operations for asc date
-    for operation in tqdm(row.operations, desc="Operations progress: "):
+    # * FEAT: aggregate operations by day and sum amount
+    operations = session.query(Operation.day, Operation.user_id, func.sum(Operation.amount).label("day_amount")) \
+                  .filter_by(user_id=row.id) \
+                  .group_by(Operation.day, Operation.user_id) \
+                  .order_by(Operation.day).all()
+    logger.info(f'Total operations for {row.name}: {row.operations.count()} for {len(operations)} days')
+    for operation in tqdm(operations, desc=f"Processing {row.name} operations: "):
       report.write("\n")
       day: date = operation.day
       formatted_day = day.strftime('%d/%m/%Y')
-      report_amount = str(round(operation.amount, 2)).replace('.', ',')
+      report_amount = str(round(operation.day_amount, 2)).replace('.', ',')
       report_operation = f"{formatted_day} ** {report_amount}€"
       report.write(report_operation)
+      # sleep(0.1)
 
     report.save()
 
