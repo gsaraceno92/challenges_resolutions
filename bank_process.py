@@ -5,15 +5,9 @@ import os
 import pathlib
 import sys
 from datetime import date, datetime
-# from time import sleep
+from typing import List
+from time import sleep
 
-import sqlalchemy as sql
-from sqlalchemy.engine import ResultProxy
-from sqlalchemy import select
-from sqlalchemy.engine.base import Engine
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
-from sqlalchemy.sql.functions import func
 from tqdm import tqdm
 
 file_path = os.path.dirname(__file__)
@@ -23,24 +17,14 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S')
 
-from models import MysqlException, Operation, Report, User
+from models import Operation, Report, User, initialize_session, close_session
 
 logger = logging.getLogger(__name__)
 
-def get_engine(user: str, pwd: str, host: str, port: int, db: str) -> Engine:
-  try:
-    engine: Engine = sql.create_engine(f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}", echo=False)
-  except SQLAlchemyError as err:
-    logging.error(err)
-    raise MysqlException(err)
-  
-  return engine
 
-
-def process_users_operations(data: ResultProxy, report_path: str) -> None:
+def process_users_operations(users: List[User], report_path: str) -> None:
   report_path = os.path.join(file_path, './reports', today)
   pathlib.Path(report_path).mkdir(parents=True, exist_ok=True)
-  users = data.scalars().all()
   logger.info(f'Total users: N.{len(users)}')
   for row in tqdm(users, desc="Users: ", disable=False):
     logger.info(f'Process user: {row.id} - {row.name}')
@@ -49,10 +33,7 @@ def process_users_operations(data: ResultProxy, report_path: str) -> None:
     report.write(row.name)
     report.write("\n")
     # * FEAT: aggregate operations by day and sum amount
-    operations = session.query(Operation.day, Operation.user_id, func.sum(Operation.amount).label("day_amount")) \
-                  .filter_by(user_id=row.id) \
-                  .group_by(Operation.day, Operation.user_id) \
-                  .order_by(Operation.day).all()
+    operations = Operation.filter(row.id)
     logger.info(f'Total operations for {row.name}: {row.operations.count()} for {len(operations)} days')
     for operation in tqdm(operations, desc=f"Processing {row.name} operations: "):
       report.write("\n")
@@ -61,7 +42,7 @@ def process_users_operations(data: ResultProxy, report_path: str) -> None:
       report_amount = str(round(operation.day_amount, 2)).replace('.', ',')
       report_operation = f"{formatted_day} ** {report_amount}€"
       report.write(report_operation)
-      # sleep(0.1)
+      sleep(0.1)
 
     report.save()
 
@@ -106,21 +87,16 @@ if __name__ == '__main__':
   args = parser.parse_args()
   logging.debug('Get script args')
 
-  try:
-    engine = get_engine(user=args.user, pwd=args.password, host=args.host, port=args.port, db=args.database)
-    logging.info('Got mysql client')
-  except MysqlException as e:
-    sys.exit(e)
+  initialize_session(user=args.user, pwd=args.password, host=args.host, port=args.port, db=args.database)
 
   print('Start process')
   logging.info('Start process')
-  session = Session(engine)
 
-  select_users = select(User)
-  users: ResultProxy = session.execute(select_users)
+  users: List[User] = User.get_all()
   today = datetime.today()
   today = today.strftime('%d-%m-%Y')
   report_path = os.path.join(file_path, './reports', today)
   pathlib.Path(report_path).mkdir(parents=True, exist_ok=True)
-  process_users_operations(data=users, report_path=report_path)
-
+  process_users_operations(users, report_path=report_path)
+  
+  close_session()

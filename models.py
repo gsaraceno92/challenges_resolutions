@@ -1,16 +1,45 @@
-
+import sys
 import io
 from typing import Any, List
 import logging
+from colorama import Style, Fore
 
+import sqlalchemy as sql
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm.session import Session
 from sqlalchemy.sql.functions import func
+from sqlalchemy.engine.base import Engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql.schema import Column, ForeignKey
 from sqlalchemy.sql.sqltypes import DECIMAL, DateTime, Integer, String
 
 logger = logging.getLogger(__name__)
 # declarative base class
 Base = declarative_base()
+
+def get_engine(user: str, pwd: str, host: str, port: int, db: str) -> Engine:
+    try:
+        engine: Engine = sql.create_engine(f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}", echo=False)
+    except SQLAlchemyError as err:
+        logging.error(err)
+        raise MysqlException(err)
+    return engine
+
+def initialize_session(user: str, pwd: str, host: str, port: int, db: str) -> None:
+    """Define mysql engine and set a global session"""
+
+    global session
+    try:
+        engine = get_engine(user, pwd, host, port, db)
+        logging.info('Got mysql client')
+    except MysqlException as e:
+        sys.exit(e)
+    session = Session(engine)
+
+def close_session():
+    """Close global sql session"""
+
+    session.close()
 class MysqlException(Exception):
   pass
 
@@ -27,6 +56,11 @@ class Report:
     return io.StringIO()
 
   def write(self, content: Any) -> None:
+    """
+    Write string content into an StringIo object.
+    Every content is appended to the obejct
+ 
+    """
     self.__output__.write(content)
 
   def get_content(self) -> str:
@@ -58,6 +92,10 @@ class User(Base):
     balance = Column('saldo', DECIMAL(2, 13), nullable=True)
     operations = relationship("Operation", back_populates="user", order_by="Operation.day", lazy="dynamic")
 
+    @classmethod
+    def get_all(cls):
+        return session.query(cls).all()
+
 
 class Operation(Base):
     __tablename__ = 'operazioni'
@@ -68,17 +106,17 @@ class Operation(Base):
     amount = Column('ammontare', DECIMAL(2, 13), nullable=True)
     user = relationship("User", back_populates="operations")
 
-    # @classmethod
-    # def filter(cls, id: int) -> List:
-    #     try:
-    #         operations = session.query(cls.day, cls.user_id, func.sum(cls.amount).label("day_amount")) \
-    #                 .filter_by(user_id=id) \
-    #                 .group_by(cls.day, cls.user_id) \
-    #                 .order_by(cls.day).all()
-    #     except Exception as e:
-    #         print("Error retrieving operations for user ", id)
-    #         logger.error(e)
-    #         return []
-    #     else:
-    #         return operations
+    @classmethod
+    def filter(cls, id: int) -> List:
+        try:
+            operations = session.query(cls.day, cls.user_id, func.sum(cls.amount).label("day_amount")) \
+                    .filter_by(user_id=id) \
+                    .group_by(cls.day, cls.user_id) \
+                    .order_by(cls.day).all()
+        except Exception as e:
+            print(Fore.RED, "Error retrieving operations for user ", id, Style.RESET_ALL)
+            logger.error(e)
+            return []
+        else:
+            return operations
             
