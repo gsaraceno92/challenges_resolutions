@@ -6,7 +6,7 @@ import pathlib
 import sys
 from datetime import date, datetime
 from typing import List
-from time import sleep
+# from time import sleep
 
 from tqdm import tqdm
 
@@ -42,7 +42,7 @@ def process_users_operations(users: List[User], report_path: str) -> None:
       report_amount = str(round(operation.day_amount, 2)).replace('.', ',')
       report_operation = f"{formatted_day} ** {report_amount}€"
       report.write(report_operation)
-      sleep(0.1)
+      # sleep(0.1)
 
     report.save()
 
@@ -97,6 +97,6 @@ if __name__ == '__main__':
   today = today.strftime('%d-%m-%Y')
   report_path = os.path.join(file_path, './reports', today)
   pathlib.Path(report_path).mkdir(parents=True, exist_ok=True)
-  process_users_operations(users, report_path=report_path)
+  process_users_operations(users, report_path)
   
   close_session()

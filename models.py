@@ -39,7 +39,9 @@ def initialize_session(user: str, pwd: str, host: str, port: int, db: str) -> No
 def close_session():
     """Close global sql session"""
 
+    logging.info('Closed sql session')
     session.close()
+
 class MysqlException(Exception):
   pass
 
@@ -76,6 +78,8 @@ class Report:
     self.__output__.close()
 
   def save(self) -> None:
+    """Get buffer content and create file."""
+
     report: io.TextIOWrapper = open(file=self.file_path, mode=self.mode)
     content = self.get_content()
     report.write(content)
@@ -94,8 +98,12 @@ class User(Base):
 
     @classmethod
     def get_all(cls):
-        return session.query(cls).all()
-
+        try:
+            return session.query(cls).all()
+        except Exception as e:
+            print(Fore.RED, "Error retrieving users from database ", id, Style.RESET_ALL)
+            logger.exception(e)
+            return []
 
 class Operation(Base):
     __tablename__ = 'operazioni'
